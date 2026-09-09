@@ -74,7 +74,7 @@
   nav button:hover{background:rgba(255,255,255,.12);}
   nav button.active{background:var(--amber);border-color:var(--amber);color:#2A1B08;font-weight:700;}
   nav select{background:#0E4D46;color:#fff;}
-  nav select option{color:#111;}
+  nav select option{color:#0A3733;background:#fff;font-weight:600;}
   .nav-gap{flex:1;}
   .nav-sep{width:1px;background:rgba(255,255,255,.25);align-self:stretch;margin:0 4px;}
 
@@ -144,26 +144,18 @@
   .banner-warning{background:var(--danger-soft);border-color:var(--danger);color:#7a2d20;}
   .banner-info{background:var(--blue-soft);border-color:var(--blue);color:#1F3A52;}
 
-  /* شريط الدعم الفني — رفيع وقابل للطي */
+  /* شريط الدعم الفني — ثابت دائم الظهور بالمنتصف */
   #supportBar{
     position:fixed;bottom:0;right:0;left:0;
     background:var(--teal-dark);
     color:#E9F1EE;
-    font-size:12px;
+    font-size:12.5px;
     border-top:2px solid var(--amber);
     z-index:30;
-    overflow:hidden;
+    display:flex;justify-content:center;align-items:center;
+    padding:8px 16px;
+    text-align:center;
   }
-  #supportToggle{
-    width:100%;background:none;border:none;color:#E9F1EE;
-    padding:5px 16px;font-size:11.5px;cursor:pointer;font-family:inherit;
-    display:flex;justify-content:center;align-items:center;gap:6px;
-  }
-  #supportContent{
-    display:none;justify-content:space-between;align-items:center;
-    padding:0 16px 8px;
-  }
-  #supportBar.expanded #supportContent{display:flex;}
   #supportBar b{color:var(--amber);font-weight:700;}
 
   /* مؤشر الحفظ */
@@ -261,11 +253,7 @@
 <div id="saveIndicator"></div>
 
 <div id="supportBar">
-  <button id="supportToggle">الدعم الفني ▾</button>
-  <div id="supportContent">
-    <span id="supportCompanyName">أصالة الهرم التجاري</span>
-    <span>الدعم الفني: <b id="supportEngName">م. صلاح غالب</b></span>
-  </div>
+  <span>الدعم الفني: <b id="supportEngName">م. صلاح غالب</b></span>
 </div>
 
 <script>
@@ -675,7 +663,6 @@ function buildNav(){
 
 function render(){
   document.getElementById("companySub").textContent = COMPANY_NAME + " — سنة " + state.currentYear;
-  document.getElementById("supportCompanyName").textContent = COMPANY_NAME;
   document.getElementById("supportEngName").textContent = SUPPORT_NAME;
 
   updateHeaderYearControls();
@@ -1390,10 +1377,6 @@ function triggerImport(){
 }
 
 /* ============================= بدء التشغيل ============================= */
-document.getElementById("supportToggle").addEventListener("click", ()=>{
-  document.getElementById("supportBar").classList.toggle("expanded");
-});
-
 (async function start(){
   await loadOrInit();
   currentMonth = pickInitialMonth();
