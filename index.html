@@ -93,8 +93,12 @@
   tbody tr:hover{background:#FAFCF9;}
   tfoot td{font-weight:700;background:var(--amber-soft);border-top:2px solid var(--amber);color:var(--teal-dark);}
 
-  .num-input{width:100px;padding:6px 7px;border:1px solid var(--line);border-radius:4px;text-align:center;font-size:13.5px;font-family:inherit;}
+  .num-input{width:100px;padding:6px 7px;border:1px solid var(--line);border-radius:4px;text-align:center;font-size:13.5px;font-family:inherit;direction:ltr;}
   .num-input:focus{outline:2px solid var(--amber);border-color:var(--amber);}
+  /* إخفاء أسهم الزيادة/النقصان في أي حقل رقمي (احتياطًا) */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
+  input[type="number"]{ -moz-appearance:textfield; }
   .text-input{width:150px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:14px;font-family:inherit;text-align:right;}
   .muted-cell{color:var(--muted);}
   .accent-cell{color:var(--teal-dark);font-weight:700;}
@@ -125,6 +129,14 @@
   .card.highlight{border-color:var(--amber);background:var(--amber-soft);}
   .card.highlight .value{color:#7A4A16;}
   .card a.btn, .card button.btn{margin-top:8px;display:inline-block;}
+  .progress-track{background:var(--teal-soft);border-radius:20px;height:10px;overflow:hidden;margin-top:8px;}
+  .progress-fill{background:var(--teal);height:100%;border-radius:20px;transition:width .2s;}
+  .mini-list{list-style:none;margin:0;padding:0;}
+  .mini-list li{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px;}
+  .mini-list li:last-child{border-bottom:none;}
+  .mini-list .rank{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--teal-soft);color:var(--teal-dark);font-size:11px;font-weight:700;margin-left:8px;}
+  .mini-list .name{display:flex;align-items:center;}
+  .mini-list .amt{font-weight:700;color:var(--teal-dark);}
 
   .rate-toggle{display:flex;align-items:center;gap:6px;}
   .rate-toggle input[type=checkbox]{width:16px;height:16px;}
@@ -470,20 +482,18 @@ function setOpening(year, catId, val){
 function calcD(year, catId, m){ return getAdd(year, catId, m) * getRate(catId) / 100; }
 function calcE(year, catId, m){ return calcD(year, catId, m) / (13-m); }
 function calcCum(year, catId, uptoMonth){
-  // كل إضافة تُدخل في شهر m يُرحَّل قسطها الشهري (E) ويتكرر في كل شهر لاحق
-  // حتى نهاية السنة، وليس مرة واحدة فقط في شهر إدخالها.
+  // إجمالي الأقساط الشهرية لكل الإضافات من بداية السنة حتى شهر uptoMonth،
+  // كل قسط يُضاف مرة واحدة فقط في شهر إضافته ثم يبقى ضمن المجمّع (لا يتكرر
+  // شهريًا) — هذا مطابق لملف الشركة الرسمي (اهلاكات_2026.xlsx).
   let sum=0;
-  for(let m=1;m<=uptoMonth;m++){
-    sum += calcE(year, catId, m) * (uptoMonth - m + 1);
-  }
+  for(let k=1;k<=uptoMonth;k++) sum += calcE(year, catId, k);
   return sum;
 }
 function calcH(year, catId, m){ return getOpening(year, catId) + calcCum(year, catId, m); }
-// الحِمل الفعلي للإهلاك في شهر واحد (يشمل ما رُحِّل من إضافات الأشهر السابقة).
-// يُستخدم في كل مكان يُجمَّع فيه إهلاك "الشهر" أو "السنة" على مستوى الفئات/التقارير،
-// بخلاف عمود "اهلاك يخص الشهر" في جدول الإدخال الذي يعرض فقط قسط إضافة ذلك الشهر تحديدًا.
+// "اهلاك يخص الشهر" = قسط إضافات هذا الشهر فقط (= الفرق بين المجمّع الحالي والسابق،
+// وهو نفس قيمة calcE لأن كل قسط يُضاف مرة واحدة فقط — راجع calcCum أعلاه).
 function calcMonthCharge(year, catId, m){
-  return calcCum(year, catId, m) - (m>1 ? calcCum(year, catId, m-1) : 0);
+  return calcE(year, catId, m);
 }
 
 function existingYears(){ return Object.keys(state.years).map(Number).sort((a,b)=>a-b); }
@@ -567,6 +577,51 @@ function fmt(n){
   if(n===undefined||n===null||isNaN(n)) n=0;
   return n.toLocaleString("en-US",{minimumFractionDigits:2, maximumFractionDigits:2});
 }
+
+/* ---- تحويل/تنسيق حقول الإدخال الرقمية: أرقام إنجليزية فقط + فواصل آلاف، بدون أسهم ---- */
+const AR_DIGITS  = "٠١٢٣٤٥٦٧٨٩";
+const FA_DIGITS  = "۰۱۲۳۴۵۶۷۸۹";
+function toEnglishDigits(str){
+  return String(str==null?"":str).replace(/[٠-٩]/g, d=>String(AR_DIGITS.indexOf(d)))
+                                   .replace(/[۰-۹]/g, d=>String(FA_DIGITS.indexOf(d)));
+}
+// ينظّف النص المُدخل ويحوّله إلى نص منسّق للعرض داخل الحقل (أرقام إنجليزية + فواصل آلاف)
+function formatNumberInputStr(raw){
+  let s = toEnglishDigits(raw).replace(/[^\d.]/g, ""); // إبقاء الأرقام والنقطة العشرية فقط
+  const dot = s.indexOf(".");
+  if(dot !== -1) s = s.slice(0, dot+1) + s.slice(dot+1).replace(/\./g, ""); // نقطة واحدة فقط
+  let [intPart, decPart] = s.split(".");
+  intPart = (intPart||"").replace(/^0+(?=\d)/, "");
+  const withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  let out = withCommas;
+  if(decPart !== undefined) out += "." + decPart;
+  else if(s.endsWith(".")) out += ".";
+  return out;
+}
+function parseFormattedNumber(str){
+  return Number(String(str==null?"":str).replace(/,/g, "")) || 0;
+}
+// يُستخدم داخل oninput لكل حقل رقمي: ينسّق القيمة مباشرة أثناء الكتابة (فواصل + أرقام إنجليزية)
+// مع الحفاظ على موضع المؤشّر، ثم يستدعي onValue بالرقم الفعلي المُدخل
+function handleNumericInput(e, onValue){
+  const input = e.target;
+  const cursorBefore = input.selectionStart ?? input.value.length;
+  const digitsBeforeCursor = toEnglishDigits(input.value.slice(0, cursorBefore)).replace(/[^\d.]/g,"").length;
+  const formatted = formatNumberInputStr(input.value);
+  input.value = formatted;
+  let count = 0, pos = formatted.length;
+  for(let i=0; i<formatted.length; i++){
+    if(/[\d.]/.test(formatted[i])) count++;
+    if(count >= digitsBeforeCursor){ pos = i+1; break; }
+  }
+  input.setSelectionRange(pos, pos);
+  onValue(parseFormattedNumber(formatted));
+}
+// خصائص جاهزة لحقل رقمي نصّي (بدون أسهم، وبدون لوحة مفاتيح عربية للأرقام)
+function numInputAttrs(value){
+  return {type:"text", inputmode:"decimal", autocomplete:"off", style:"direction:ltr;", value: (value===""||value==null) ? "" : formatNumberInputStr(String(value))};
+}
+
 function el(tag, attrs={}, children=[]){
   const e = document.createElement(tag);
   for(const k in attrs){
@@ -601,6 +656,14 @@ function pickInitialMonth(){
     if(!mo || !mo.additions || Object.keys(mo.additions).length===0) return m;
   }
   return 12;
+}
+// الشهر الذي يُفتح افتراضيًا عند تشغيل التطبيق: الشهر الحالي فعليًا (حسب تاريخ اليوم)
+// إن كانت السنة المفتوحة حاليًا في التطبيق هي نفسها السنة الحالية فعليًا،
+// وإلا (مثلاً بداية سنة جديدة لم تُفتح بعد) يُستخدم أول شهر فارغ كما كان سابقًا.
+function pickStartupMonth(){
+  const now = new Date();
+  if(state.currentYear === now.getFullYear()) return now.getMonth()+1;
+  return pickInitialMonth();
 }
 
 function updateHeaderYearControls(){
@@ -698,14 +761,31 @@ function renderDashboard(){
     wrap.appendChild(renderBackupBanner());
   }
 
-  const lastMonth = (function(){
-    const yd = getYearData(year);
-    for(let m=12;m>=1;m--){
-      if(yd.months[m] && yd.months[m].additions && Object.keys(yd.months[m].additions).length>0) return m;
-    }
-    return null;
-  })();
+  const yd = getYearData(year);
+  const filledMonths = [];
+  for(let m=1;m<=12;m++){
+    if(yd.months[m] && yd.months[m].additions && Object.keys(yd.months[m].additions).length>0) filledMonths.push(m);
+  }
+  const lastMonth = filledMonths.length ? Math.max(...filledMonths) : null;
   const nextMonth = pickInitialMonth();
+  const realNow = new Date();
+  const realCurrentMonth = (year===realNow.getFullYear()) ? realNow.getMonth()+1 : null;
+
+  const totalOpening = state.categories.reduce((s,c)=>s+getOpening(year,c.id),0);
+  const hasAnyData = totalOpening>0 || filledMonths.length>0;
+
+  // حالة سنة جديدة تمامًا لا توجد فيها أي بيانات بعد — رسالة ترحيبية توجيهية بدل شاشة فارغة الشكل
+  if(!hasAnyData){
+    const empty = el("div",{class:"panel"});
+    empty.appendChild(el("h2",{text:"مرحبًا 👋 لنبدأ إعداد سجل الإهلاكات"}));
+    empty.appendChild(el("div",{class:"hint",text:"لا توجد بيانات مُدخلة بعد لسنة "+year+". ابدأ بإعداد الفئات والأرصدة الافتتاحية والنسب، ثم أدخل إضافات كل شهر."}));
+    empty.appendChild(el("div",{class:"row-actions"},[
+      el("button",{class:"btn", text:"⚙ ابدأ بالإعداد (الفئات والأرصدة)", onclick:()=>{currentView="setup"; render();}}),
+      el("button",{class:"btn secondary", text:"⭱ استيراد نسخة احتياطية سابقة", onclick:triggerImport})
+    ]));
+    wrap.appendChild(empty);
+    return wrap;
+  }
 
   const totalHFinal = state.categories.reduce((s,c)=>s+calcH(year,c.id, lastMonth||1),0);
 
@@ -713,6 +793,7 @@ function renderDashboard(){
     const sumE = calcCum(year, cat.id, lastMonth||1); // إجمالي إهلاك الفئة حتى آخر شهر تم إدخاله (يشمل الترحيل)
     return {cat, sumE};
   }).sort((a,b)=>b.sumE-a.sumE);
+  const topCat = categoryTotals[0];
 
   const cards = el("div",{class:"cards"});
   cards.appendChild(el("div",{class:"card"},[
@@ -724,14 +805,38 @@ function renderDashboard(){
     el("div",{class:"label",text:"الاستهلاك الحالي (سنة "+year+")"}),
     el("div",{class:"value",text:fmt(totalHFinal)})
   ]));
-  if(topCat && topCat.sumE>0){
+  if(realCurrentMonth){
+    const monthAdd = state.categories.reduce((s,c)=>s+getAdd(year,c.id,realCurrentMonth),0);
     cards.appendChild(el("div",{class:"card"},[
-      el("div",{class:"label",text:"الأعلى استهلاكًا هذه السنة"}),
-      el("div",{class:"value",text:topCat.cat.name}),
-      el("button",{class:"btn small secondary", text:"عرض التقارير", onclick:()=>{currentView="reports"; render();}})
+      el("div",{class:"label",text:"شهرنا الحالي: "+MONTH_NAMES[realCurrentMonth]}),
+      el("div",{class:"value",text: monthAdd>0 ? "إضافات "+fmt(monthAdd) : "لم تُدخل إضافات بعد"}),
+      el("button",{class:"btn small secondary", text:"فتح الشهر", onclick:()=>{currentMonth=realCurrentMonth; currentView="month"; render();}})
     ]));
   }
   wrap.appendChild(cards);
+
+  const progressPanel = el("div",{class:"panel"});
+  progressPanel.appendChild(el("h2",{text:"تقدّم إدخال بيانات سنة "+year}));
+  progressPanel.appendChild(el("div",{class:"hint",text: filledMonths.length+" من 12 شهرًا تم إدخال بياناتها"}));
+  progressPanel.appendChild(el("div",{class:"progress-track"},[
+    el("div",{class:"progress-fill", style:"width:"+Math.round(filledMonths.length/12*100)+"%;"})
+  ]));
+  wrap.appendChild(progressPanel);
+
+  if(categoryTotals.some(x=>x.sumE>0)){
+    const topPanel = el("div",{class:"panel"});
+    topPanel.appendChild(el("h2",{text:"أعلى الفئات استهلاكًا هذه السنة"}));
+    const list = el("ul",{class:"mini-list"});
+    categoryTotals.filter(x=>x.sumE>0).slice(0,3).forEach((x,i)=>{
+      list.appendChild(el("li",{},[
+        el("span",{class:"name"},[ el("span",{class:"rank", text:String(i+1)}), el("span",{text:x.cat.name}) ]),
+        el("span",{class:"amt", text:fmt(x.sumE)})
+      ]));
+    });
+    topPanel.appendChild(list);
+    topPanel.appendChild(el("button",{class:"btn small secondary", text:"عرض كل التقارير", onclick:()=>{currentView="reports"; render();}}));
+    wrap.appendChild(topPanel);
+  }
 
   const panel = el("div",{class:"panel"});
   panel.appendChild(el("h2",{text:"وصول سريع"}));
@@ -789,7 +894,7 @@ function renderSetup(){
 
   panel.appendChild(el("div",{class:"rate-box blue"},[
     el("span",{text:"النسبة العامة الافتراضية (لكل الفئات ما لم تُحدَّد نسبة خاصة):"}),
-    el("input",{type:"number", step:"0.01", value:state.settings.defaultRate, oninput:(e)=>{state.settings.defaultRate=Number(e.target.value)||0; save();}, onchange:()=>refreshSetup()}),
+    el("input",{...numInputAttrs(state.settings.defaultRate), oninput:(e)=>{handleNumericInput(e, v=>{state.settings.defaultRate=v; save();});}, onchange:()=>refreshSetup()}),
     el("span",{text:"%"})
   ]));
 
@@ -811,12 +916,12 @@ function renderSetup(){
       else{ cat.rateOverride = null; }
       save(); refreshSetup();
     }});
-    const rateInput = el("input",{type:"number", step:"0.01", value: hasCustom?cat.rateOverride:state.settings.defaultRate, ...(hasCustom?{}:{disabled:"disabled"}), oninput:(e)=>{
-      cat.rateOverride = Number(e.target.value)||0; save();
+    const rateInput = el("input",{...numInputAttrs(hasCustom?cat.rateOverride:state.settings.defaultRate), ...(hasCustom?{}:{disabled:"disabled"}), oninput:(e)=>{
+      handleNumericInput(e, v=>{ cat.rateOverride = v; save(); });
     }});
     tbody.appendChild(el("tr",{},[
       el("td",{},[ el("input",{class:"text-input", value:cat.name, oninput:(e)=>{cat.name=e.target.value; save();}}) ]),
-      el("td",{},[ el("input",{class:"num-input", type:"number", step:"0.01", value:getOpening(state.currentYear,cat.id), ...(yearLocked?{disabled:"disabled"}:{}), oninput:(e)=>{setOpening(state.currentYear, cat.id, Number(e.target.value)||0);}}) ]),
+      el("td",{},[ el("input",{class:"num-input", ...numInputAttrs(getOpening(state.currentYear,cat.id)), ...(yearLocked?{disabled:"disabled"}:{}), oninput:(e)=>{handleNumericInput(e, v=>setOpening(state.currentYear, cat.id, v));}}) ]),
       el("td",{},[ el("div",{class:"rate-toggle"},[checkbox, rateInput, el("span",{text:"%"})]) ]),
       el("td",{},[ el("button",{class:"del-btn", text:"حذف", onclick: async ()=>{
         const ok = await modalConfirm({title:"حذف فئة", message:`حذف فئة "${cat.name}"؟ سيتم حذف بياناتها من كل السنوات.`, danger:true});
@@ -886,7 +991,8 @@ function refreshSetup(){
 function buildMonthTable(year, m){
   const locked = isYearLocked(year);
   const table = el("table",{class:"month-table"});
-  const headers = ["الفئة","الرصيد الافتتاحي","النسبة%","الإضافات","اهلاك الإضافات","اهلاك يخص "+MONTH_NAMES[m],"مجمع حتى الشهر السابق","مجمع حتى "+MONTH_NAMES[m],"الاستهلاك الحالي"];
+  const remaining = 13-m;
+  const headers = ["الفئة","الرصيد الافتتاحي","النسبة%","الإضافات","اهلاك الإضافات","اهلاك يخص "+MONTH_NAMES[m]+" (÷"+remaining+")","مجمع حتى الشهر السابق","مجمع حتى "+MONTH_NAMES[m],"الاستهلاك الحالي"];
   table.appendChild(el("thead",{},[
     el("tr",{}, headers.map(h=>el("th",{text:h})))
   ]));
@@ -910,9 +1016,11 @@ function buildMonthTable(year, m){
       el("td",{class:"muted-cell", "data-label":headers[1], text:fmt(B)}),
       el("td",{class:"muted-cell", "data-label":headers[2], text:getRate(cat.id)+"%"}),
       el("td",{"data-label":headers[3]},[
-        el("input",{class:"num-input", type:"number", step:"0.01", value:C||"", placeholder:"0", ...(locked?{disabled:"disabled"}:{}), oninput:(e)=>{
-          setAdd(year, cat.id, m, Number(e.target.value)||0);
-          updateMonthTableCalculations(table, year, m);
+        el("input",{class:"num-input", ...numInputAttrs(C||""), placeholder:"0", ...(locked?{disabled:"disabled"}:{}), oninput:(e)=>{
+          handleNumericInput(e, v=>{
+            setAdd(year, cat.id, m, v);
+            updateMonthTableCalculations(table, year, m);
+          });
         }})
       ]),
       el("td",{class:"muted-cell", "data-label":headers[4], "data-field":"D", text:fmt(D)}),
@@ -1414,7 +1522,8 @@ function triggerImport(){
 /* ============================= بدء التشغيل ============================= */
 (async function start(){
   await loadOrInit();
-  currentMonth = pickInitialMonth();
+  currentMonth = pickStartupMonth();
+  currentView = "month";
   render();
 })();
 </script>
