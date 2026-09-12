@@ -470,7 +470,12 @@ function setOpening(year, catId, val){
 function calcD(year, catId, m){ return getAdd(year, catId, m) * getRate(catId) / 100; }
 function calcE(year, catId, m){ return calcD(year, catId, m) / (13-m); }
 function calcCum(year, catId, uptoMonth){
-  let sum=0; for(let k=1;k<=uptoMonth;k++) sum += calcE(year, catId, k);
+  // كل إضافة تُدخل في شهر m يُرحَّل قسطها الشهري (E) ويتكرر في كل شهر لاحق
+  // حتى نهاية السنة، وليس مرة واحدة فقط في شهر إدخالها.
+  let sum=0;
+  for(let m=1;m<=uptoMonth;m++){
+    sum += calcE(year, catId, m) * (uptoMonth - m + 1);
+  }
   return sum;
 }
 function calcH(year, catId, m){ return getOpening(year, catId) + calcCum(year, catId, m); }
@@ -896,21 +901,21 @@ function buildMonthTable(year, m){
 
     totals.b+=B; totals.c+=C; totals.d+=D; totals.e+=E; totals.f+=F; totals.g+=G; totals.h+=H;
 
-    tbody.appendChild(el("tr",{},[
+    tbody.appendChild(el("tr",{"data-cat-id":cat.id},[
       el("td",{text:cat.name}),
       el("td",{class:"muted-cell", "data-label":headers[1], text:fmt(B)}),
       el("td",{class:"muted-cell", "data-label":headers[2], text:getRate(cat.id)+"%"}),
       el("td",{"data-label":headers[3]},[
         el("input",{class:"num-input", type:"number", step:"0.01", value:C||"", placeholder:"0", ...(locked?{disabled:"disabled"}:{}), oninput:(e)=>{
           setAdd(year, cat.id, m, Number(e.target.value)||0);
-          refreshMonthTable(m);
+          updateMonthTableCalculations(table, year, m);
         }})
       ]),
-      el("td",{class:"muted-cell", "data-label":headers[4], text:fmt(D)}),
-      el("td",{class:"muted-cell", "data-label":headers[5], text:fmt(E)}),
-      el("td",{class:"muted-cell", "data-label":headers[6], text:fmt(F)}),
-      el("td",{class:"accent-cell", "data-label":headers[7], text:fmt(G)}),
-      el("td",{class:"accent-cell", "data-label":headers[8], text:fmt(H)})
+      el("td",{class:"muted-cell", "data-label":headers[4], "data-field":"D", text:fmt(D)}),
+      el("td",{class:"muted-cell", "data-label":headers[5], "data-field":"E", text:fmt(E)}),
+      el("td",{class:"muted-cell", "data-label":headers[6], "data-field":"F", text:fmt(F)}),
+      el("td",{class:"accent-cell", "data-label":headers[7], "data-field":"G", text:fmt(G)}),
+      el("td",{class:"accent-cell", "data-label":headers[8], "data-field":"H", text:fmt(H)})
     ]));
   });
   table.appendChild(tbody);
@@ -919,12 +924,12 @@ function buildMonthTable(year, m){
       el("td",{text:"الإجمالي"}),
       el("td",{"data-label":headers[1], text:fmt(totals.b)}),
       el("td",{"data-label":headers[2], text:"—"}),
-      el("td",{"data-label":headers[3], text:fmt(totals.c)}),
-      el("td",{"data-label":headers[4], text:fmt(totals.d)}),
-      el("td",{"data-label":headers[5], text:fmt(totals.e)}),
-      el("td",{"data-label":headers[6], text:fmt(totals.f)}),
-      el("td",{"data-label":headers[7], text:fmt(totals.g)}),
-      el("td",{"data-label":headers[8], text:fmt(totals.h)})
+      el("td",{"data-label":headers[3], "data-total-field":"c", text:fmt(totals.c)}),
+      el("td",{"data-label":headers[4], "data-total-field":"d", text:fmt(totals.d)}),
+      el("td",{"data-label":headers[5], "data-total-field":"e", text:fmt(totals.e)}),
+      el("td",{"data-label":headers[6], "data-total-field":"f", text:fmt(totals.f)}),
+      el("td",{"data-label":headers[7], "data-total-field":"g", text:fmt(totals.g)}),
+      el("td",{"data-label":headers[8], "data-total-field":"h", text:fmt(totals.h)})
     ]),
     el("tr",{},[
       el("td",{text:"متوسط الشهر (الرصيد الافتتاحي ÷ 12)"}),
@@ -939,6 +944,33 @@ function buildMonthTable(year, m){
     ])
   ]));
   return {table, totals};
+}
+
+// تحديث الأعمدة المحسوبة فقط (بدون إعادة بناء الجدول) حتى لا يفقد حقل
+// الإدخال تركيزه (focus) أثناء الكتابة — هذا هو سبب قبول رقم واحد فقط سابقًا.
+function updateMonthTableCalculations(table, year, m){
+  let totals = {c:0,d:0,e:0,f:0,g:0,h:0};
+  table.querySelectorAll("tbody tr[data-cat-id]").forEach(tr=>{
+    const catId = tr.getAttribute("data-cat-id");
+    const C = getAdd(year, catId, m);
+    const D = calcD(year, catId, m);
+    const E = calcE(year, catId, m);
+    const F = m>1 ? calcCum(year, catId, m-1) : 0;
+    const G = calcCum(year, catId, m);
+    const H = calcH(year, catId, m);
+    totals.c+=C; totals.d+=D; totals.e+=E; totals.f+=F; totals.g+=G; totals.h+=H;
+    tr.querySelector('[data-field="D"]').textContent = fmt(D);
+    tr.querySelector('[data-field="E"]').textContent = fmt(E);
+    tr.querySelector('[data-field="F"]').textContent = fmt(F);
+    tr.querySelector('[data-field="G"]').textContent = fmt(G);
+    tr.querySelector('[data-field="H"]').textContent = fmt(H);
+  });
+  const tfoot = table.querySelector("tfoot");
+  if(tfoot){
+    const set = (field, val)=>{ const c = tfoot.querySelector('[data-total-field="'+field+'"]'); if(c) c.textContent = fmt(val); };
+    set("c", totals.c); set("d", totals.d); set("e", totals.e);
+    set("f", totals.f); set("g", totals.g); set("h", totals.h);
+  }
 }
 
 function renderMonth(m){
