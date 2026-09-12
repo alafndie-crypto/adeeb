@@ -479,6 +479,12 @@ function calcCum(year, catId, uptoMonth){
   return sum;
 }
 function calcH(year, catId, m){ return getOpening(year, catId) + calcCum(year, catId, m); }
+// الحِمل الفعلي للإهلاك في شهر واحد (يشمل ما رُحِّل من إضافات الأشهر السابقة).
+// يُستخدم في كل مكان يُجمَّع فيه إهلاك "الشهر" أو "السنة" على مستوى الفئات/التقارير،
+// بخلاف عمود "اهلاك يخص الشهر" في جدول الإدخال الذي يعرض فقط قسط إضافة ذلك الشهر تحديدًا.
+function calcMonthCharge(year, catId, m){
+  return calcCum(year, catId, m) - (m>1 ? calcCum(year, catId, m-1) : 0);
+}
 
 function existingYears(){ return Object.keys(state.years).map(Number).sort((a,b)=>a-b); }
 function isYearLocked(year){ const yd=getYearData(year); return !!(yd && yd.locked); }
@@ -704,10 +710,9 @@ function renderDashboard(){
   const totalHFinal = state.categories.reduce((s,c)=>s+calcH(year,c.id, lastMonth||1),0);
 
   const categoryTotals = state.categories.map(cat=>{
-    let sumE=0; for(let m=1;m<=12;m++) sumE += calcE(year,cat.id,m);
+    const sumE = calcCum(year, cat.id, lastMonth||1); // إجمالي إهلاك الفئة حتى آخر شهر تم إدخاله (يشمل الترحيل)
     return {cat, sumE};
   }).sort((a,b)=>b.sumE-a.sumE);
-  const topCat = categoryTotals[0];
 
   const cards = el("div",{class:"cards"});
   cards.appendChild(el("div",{class:"card"},[
@@ -784,7 +789,7 @@ function renderSetup(){
 
   panel.appendChild(el("div",{class:"rate-box blue"},[
     el("span",{text:"النسبة العامة الافتراضية (لكل الفئات ما لم تُحدَّد نسبة خاصة):"}),
-    el("input",{type:"number", step:"0.01", value:state.settings.defaultRate, oninput:(e)=>{state.settings.defaultRate=Number(e.target.value)||0; save(); refreshSetup();}}),
+    el("input",{type:"number", step:"0.01", value:state.settings.defaultRate, oninput:(e)=>{state.settings.defaultRate=Number(e.target.value)||0; save();}, onchange:()=>refreshSetup()}),
     el("span",{text:"%"})
   ]));
 
@@ -881,8 +886,7 @@ function refreshSetup(){
 function buildMonthTable(year, m){
   const locked = isYearLocked(year);
   const table = el("table",{class:"month-table"});
-  const remaining = 13-m;
-  const headers = ["الفئة","الرصيد الافتتاحي","النسبة%","الإضافات","اهلاك الإضافات","اهلاك يخص "+MONTH_NAMES[m]+" (÷"+remaining+")","مجمع حتى الشهر السابق","مجمع حتى "+MONTH_NAMES[m],"الاستهلاك الحالي"];
+  const headers = ["الفئة","الرصيد الافتتاحي","النسبة%","الإضافات","اهلاك الإضافات","اهلاك يخص "+MONTH_NAMES[m],"مجمع حتى الشهر السابق","مجمع حتى "+MONTH_NAMES[m],"الاستهلاك الحالي"];
   table.appendChild(el("thead",{},[
     el("tr",{}, headers.map(h=>el("th",{text:h})))
   ]));
@@ -894,7 +898,7 @@ function buildMonthTable(year, m){
     const B = getOpening(year, cat.id);
     const C = getAdd(year, cat.id, m);
     const D = calcD(year, cat.id, m);
-    const E = calcE(year, cat.id, m);
+    const E = calcMonthCharge(year, cat.id, m);
     const F = m>1 ? calcCum(year, cat.id, m-1) : 0;
     const G = calcCum(year, cat.id, m);
     const H = calcH(year, cat.id, m);
@@ -954,7 +958,7 @@ function updateMonthTableCalculations(table, year, m){
     const catId = tr.getAttribute("data-cat-id");
     const C = getAdd(year, catId, m);
     const D = calcD(year, catId, m);
-    const E = calcE(year, catId, m);
+    const E = calcMonthCharge(year, catId, m);
     const F = m>1 ? calcCum(year, catId, m-1) : 0;
     const G = calcCum(year, catId, m);
     const H = calcH(year, catId, m);
@@ -1058,7 +1062,7 @@ function renderSummary(){
   for(let m=1;m<=12;m++){
     let mC=0,mD=0,mE=0,mCum=0;
     state.categories.forEach(cat=>{
-      mC += getAdd(year,cat.id,m); mD += calcD(year,cat.id,m); mE += calcE(year,cat.id,m); mCum += calcCum(year,cat.id,m);
+      mC += getAdd(year,cat.id,m); mD += calcD(year,cat.id,m); mE += calcMonthCharge(year,cat.id,m); mCum += calcCum(year,cat.id,m);
     });
     yearTotals.c+=mC; yearTotals.d+=mD; yearTotals.e+=mE;
     const mH = totalB + mCum;
@@ -1112,9 +1116,8 @@ function renderReports(){
   const wrap = el("div");
 
   const categoryTotals = state.categories.map(cat=>{
-    let sumE=0, sumD=0;
-    for(let m=1;m<=12;m++){ sumE += calcE(year,cat.id,m); sumD += calcD(year,cat.id,m); }
-    return {cat, sumE, sumD, finalH: calcH(year, cat.id, 12)};
+    const sumE = calcCum(year, cat.id, 12); // إجمالي إهلاك الفئة للسنة كاملة (يشمل الترحيل)
+    return {cat, sumE, finalH: calcH(year, cat.id, 12)};
   }).sort((a,b)=>b.sumE-a.sumE);
 
   const topCat = categoryTotals[0];
@@ -1161,7 +1164,7 @@ function renderReports(){
   const monthlyTotals = [];
   for(let m=1;m<=12;m++){
     let mE=0;
-    state.categories.forEach(cat=> mE += calcE(year,cat.id,m));
+    state.categories.forEach(cat=> mE += calcMonthCharge(year,cat.id,m));
     monthlyTotals.push(mE);
   }
   panel2.appendChild(buildLineChart(monthlyTotals));
@@ -1203,15 +1206,15 @@ function renderReports(){
 
 function totalYearE(year){
   let t=0;
-  state.categories.forEach(cat=>{ for(let m=1;m<=12;m++) t += calcE(year, cat.id, m); });
+  state.categories.forEach(cat=> t += calcCum(year, cat.id, 12));
   return t;
 }
 
 function renderCategoryComparison(yearA, yearB, container){
   container.innerHTML = "";
   const rows = state.categories.map(cat=>{
-    let a=0,b=0;
-    for(let m=1;m<=12;m++){ a+=calcE(yearA,cat.id,m); b+=calcE(yearB,cat.id,m); }
+    const a = calcCum(yearA, cat.id, 12);
+    const b = calcCum(yearB, cat.id, 12);
     return {cat, a, b};
   });
   const maxVal = Math.max(1, ...rows.map(r=>Math.max(r.a,r.b)));
@@ -1295,7 +1298,7 @@ function renderYearReport(){
   ]));
 
   const categoryTotals = state.categories.map(cat=>{
-    let sumE=0; for(let m=1;m<=12;m++) sumE += calcE(year,cat.id,m);
+    const sumE = calcCum(year, cat.id, 12); // إجمالي إهلاك الفئة للسنة كاملة (يشمل الترحيل)
     return {cat, sumE};
   }).sort((a,b)=>b.sumE-a.sumE);
 
@@ -1356,7 +1359,7 @@ function exportMonthCSV(year, m){
   let rows = [["الفئة","الرصيد الافتتاحي","النسبة%","الإضافات","اهلاك الإضافات","اهلاك يخص الشهر","مجمع حتى الشهر السابق","مجمع حتى هذا الشهر","الاستهلاك الحالي"]];
   let totals=[0,0,0,0,0,0,0];
   state.categories.forEach(cat=>{
-    const B=getOpening(year,cat.id), C=getAdd(year,cat.id,m), D=calcD(year,cat.id,m), E=calcE(year,cat.id,m), F=m>1?calcCum(year,cat.id,m-1):0, G=calcCum(year,cat.id,m), H=calcH(year,cat.id,m);
+    const B=getOpening(year,cat.id), C=getAdd(year,cat.id,m), D=calcD(year,cat.id,m), E=calcMonthCharge(year,cat.id,m), F=m>1?calcCum(year,cat.id,m-1):0, G=calcCum(year,cat.id,m), H=calcH(year,cat.id,m);
     rows.push([cat.name, B.toFixed(2), getRate(cat.id), C.toFixed(2), D.toFixed(2), E.toFixed(2), F.toFixed(2), G.toFixed(2), H.toFixed(2)]);
     totals[0]+=B; totals[1]+=C; totals[2]+=D; totals[3]+=E; totals[4]+=F; totals[5]+=G; totals[6]+=H;
   });
@@ -1370,7 +1373,7 @@ function exportSummaryCSV(year){
   let rows = [["الشهر","الرصيد الافتتاحي","إضافات الشهر","اهلاك الإضافات","اهلاك يخص الشهر","الاهلاك المجمع","الاستهلاك الحالي"]];
   for(let m=1;m<=12;m++){
     let mC=0,mD=0,mE=0,mCum=0;
-    state.categories.forEach(cat=>{ mC+=getAdd(year,cat.id,m); mD+=calcD(year,cat.id,m); mE+=calcE(year,cat.id,m); mCum+=calcCum(year,cat.id,m); });
+    state.categories.forEach(cat=>{ mC+=getAdd(year,cat.id,m); mD+=calcD(year,cat.id,m); mE+=calcMonthCharge(year,cat.id,m); mCum+=calcCum(year,cat.id,m); });
     rows.push([MONTH_NAMES[m], totalB.toFixed(2), mC.toFixed(2), mD.toFixed(2), mE.toFixed(2), mCum.toFixed(2), (totalB+mCum).toFixed(2)]);
   }
   const csv = rows.map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
